@@ -1,0 +1,347 @@
+// ==UserScript==
+// @name         School_FCO2
+// @namespace    FCO2
+// @version      2.6
+// @description  Adds employee permission school list including INBOUND, OUTBOUND, ICQA, PIT, and INSTRUCTOR
+// @author       milagabr
+// @match        https://fclm-portal.amazon.com/employee/*
+// @grant        GM_xmlhttpRequest
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const INBOUND = [
+        { name: "Decant", data: { "Decant": { "Decanter": 1 } } },
+        { name: "Each", data: { "Receive": { "Receive Each": 1 } } },
+        { name: "Prep", data: { "Inbound Prep": { "Prep": 1 } } },
+        { name: "Cubiscan", data: { "Inbound Prep": { "Cubiscan": 1 } } },
+        { name: "Stow", data: { "Stow to Prime": { "Stow to Prime (Sub)": 1 } } },
+        { name: "Dock", data: { "Receive": { "Receive Dock": 1 }, "Transfer In": { "Transfer In Dock": 1 }, "Receive": { "Receive Dock": 3 } } },
+        { name: "Corral", data: { "Receive": { "Receive LP": 1, "Receive Dock": 1 }, "Problem Solve": { "Label Printing": 1 } } },
+        { name: "Pallet Receive", data: { "Receive": { "Receive Pallet": 1 } } }
+    ];
+
+    const OUTBOUND = [
+        { name: "Pick", data: { "Pick": { "Pick RF": 1 } } },
+        { name: "Rebin", data: { "Sort": { "Rebin": 1 } } },
+        { name: "Wrangler", data: { "Sort": { "Tote Wrangler": 1 } } },
+        { name: "Pack Multis", data: { "Pack": { "PackApp": 1 } } },
+        { name: "Pack Single", data: { "Pack": { "PackApp": 1 } } },
+        { name: "Slam at Pack", data: { "Pack": { "Slam At Pack": 1 } } },
+        { name: "Manual Slam", data: { "Pack": { "Pack Manual SLAM": 1 } } },
+        { name: "Giftwrap", data: { "Outbound Prep": { "Giftwrap": 1 } } },
+        { name: "Ship", data: { "Transfer Out": { "Transfer Out Dock": 1, "Transfer Out (Sub)": 1 }, "Sort Center": { "Container Mgmt": 1 }, "Ship": { "Outbound Dock": 1 } , "Sort Center": { "Container Builder": 1 } } },
+        { name: "KO Operator", data: { "Problem Solve": { "Psolve General": 2, "Label Printing": 1 }, "Pack": { "PackApp": 1, "Pack Manual SLAM": 2 } } },
+        { name: "Grading", data: { "Warehouse Deals": { "Grading": 2 } } }
+    ];
+
+    const ICQA = [
+        { name: "IC QA SBC", data: { "IC QA CS": { "IC QA": 1, "CS": 1 } } },
+        { name: "IC QA CC", data: { "IC QA CS": { "IC QA": 2, "CS": 1 } } },
+        { name: "IC QA SRC", data: { "IC QA CS": { "IC QA": 2, "CS": 2 } } },
+        { name: "IRDR", data: { "IC QA CS": { "IC QA": 3, "CS": 2 } } }
+    ];
+
+    const PIT = [
+        { name: "ETV", data: {} },
+        { name: "EKS", data: {} },
+        { name: "FRONTALE", data: {} },
+        { name: "TUGGER", data: {} },
+        { name: "FORCHE XL", data: {} },
+        { name: "ZALLYS", data: {} },
+        { name: "CARTON MOVER", data: {} },
+        { name: "WRAPPING", data: {} }
+    ];
+
+    const INSTRUCTOR = [
+        { name: "INSTRUCTOR", data: {} },
+        { name: "PEER TRAINER", data: {} }
+    ];
+
+    const EmployeeID = new URLSearchParams(window.location.search).get('employeeId');
+    const Location = "FCO2";
+
+    function fetchPermissions() {
+        if (EmployeeID) {
+            const url = `https://fclm-portal.amazon.com/employee/permissions?employeeId=${EmployeeID}&warehouseId=${Location}`;
+            fetch(url)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, "text/html");
+                    const table = doc.querySelector(".permissions.list.sortable");
+                    if (table) {
+                        const permissions = parsePermissionsTable(table);
+                        displayPermissions(permissions);
+                    }
+                });
+        }
+    }
+
+    function parsePermissionsTable(table) {
+        const tbody = table.querySelector("tbody");
+        const permissions = {};
+        tbody.querySelectorAll("tr").forEach(row => {
+            const cells = row.querySelectorAll("td");
+            if (cells.length >= 3) {
+                const process = cells[0].textContent.trim();
+                const subprocess = cells[1].textContent.trim();
+                const level = parseInt(cells[2].querySelector("span").textContent.trim());
+                if (!permissions[process]) permissions[process] = {};
+                permissions[process][subprocess] = level;
+            }
+        });
+        return permissions;
+    }
+
+    function displayPermissions(permissions) {
+        const employeeInfoDiv = document.querySelector('.employeeInfo');
+        if (!employeeInfoDiv) return;
+
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.flexWrap = 'wrap';
+        container.style.gap = '10px';
+
+        const inboundItems = createItems("INBOUND", INBOUND, permissions);
+        const outboundItems = createItems("OUTBOUND", OUTBOUND, permissions);
+        const icqaItems = createItems("ICQA", ICQA, permissions);
+        const pitItems = createPitItems("PIT", PIT, EmployeeID);
+        const instructorItems = createPitItems("INSTRUCTOR", INSTRUCTOR, EmployeeID);
+
+        container.appendChild(inboundItems);
+        container.appendChild(outboundItems);
+        container.appendChild(icqaItems);
+        container.appendChild(pitItems);
+        container.appendChild(instructorItems);
+
+        employeeInfoDiv.appendChild(container);
+
+        const linkContainer = document.createElement('div');
+        linkContainer.style.marginTop = '10px';
+        linkContainer.style.fontSize = '12px';
+
+        const link = document.createElement('a');
+        link.href = `https://river.amazon.com/?org=fc&buildingId=FCO2&q0=d63fb88d-e2a1-452b-ae80-41e64bed943f`;
+        link.textContent = 'Request School / Permission';
+        link.target = '_blank';
+        link.style.color = '#0066c0';
+        link.style.textDecoration = 'none';
+
+        linkContainer.appendChild(link);
+        employeeInfoDiv.appendChild(linkContainer);
+    }
+
+    function createItems(title, tasks, permissions) {
+        const wrapper = document.createElement('div');
+        wrapper.style.flex = '1';
+        wrapper.style.minWidth = '300px';
+
+        const header = document.createElement('h3');
+        header.textContent = title;
+        wrapper.appendChild(header);
+
+        const itemsContainer = document.createElement('div');
+        itemsContainer.style.display = 'flex';
+        itemsContainer.style.flexWrap = 'wrap';
+        itemsContainer.style.gap = '5px';
+
+        tasks.forEach(task => {
+            const item = document.createElement('div');
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.marginRight = '10px';
+            item.style.marginBottom = '5px';
+
+            const label = document.createElement('span');
+            label.textContent = task.name + ': ';
+            label.style.marginRight = '5px';
+
+            const status = document.createElement('span');
+            const unmetPermissions = checkTaskPermissions(task.data, permissions);
+            status.textContent = unmetPermissions.length === 0 ? "YES" : "NO";
+            status.style.color = unmetPermissions.length === 0 ? 'green' : 'red';
+            status.style.fontWeight = 'bold';
+
+            item.appendChild(label);
+            item.appendChild(status);
+            itemsContainer.appendChild(item);
+        });
+
+        wrapper.appendChild(itemsContainer);
+        return wrapper;
+    }
+
+    function createPitItems(title, tasks, employeeId) {
+        const wrapper = document.createElement('div');
+        wrapper.style.flex = '1';
+        wrapper.style.minWidth = '300px';
+
+        const header = document.createElement('h3');
+        header.textContent = title;
+        wrapper.appendChild(header);
+
+        const itemsContainer = document.createElement('div');
+        itemsContainer.style.display = 'flex';
+        itemsContainer.style.flexWrap = 'wrap';
+        itemsContainer.style.gap = '5px';
+
+        loadCSVData(function(csvData) {
+            if (csvData === null) {
+                const errorItem = document.createElement('div');
+                errorItem.textContent = "Error loading CSV data";
+                errorItem.style.color = 'red';
+                itemsContainer.appendChild(errorItem);
+                return;
+            }
+
+            tasks.forEach(task => {
+                const item = document.createElement('div');
+                item.style.display = 'flex';
+                item.style.alignItems = 'center';
+                item.style.marginRight = '10px';
+                item.style.marginBottom = '5px';
+
+                const label = document.createElement('span');
+                label.textContent = task.name + ': ';
+                label.style.marginRight = '5px';
+
+                const status = document.createElement('span');
+                status.textContent = "Loading...";
+                status.style.fontWeight = 'bold';
+
+                item.appendChild(label);
+                item.appendChild(status);
+                itemsContainer.appendChild(item);
+
+                checkPitPermission(employeeId, task.name, status, csvData);
+            });
+        });
+
+        wrapper.appendChild(itemsContainer);
+        return wrapper;
+    }
+
+    function checkTaskPermissions(taskData, permissions) {
+        const unmet = [];
+        for (const process in taskData) {
+            for (const subprocess in taskData[process]) {
+                const requiredLevel = taskData[process][subprocess];
+                const actualLevel = permissions[process]?.[subprocess];
+                if (actualLevel === undefined || actualLevel < requiredLevel) {
+                    unmet.push(`${process} - ${subprocess}`);
+                }
+            }
+        }
+        return unmet;
+    }
+
+    function loadCSVData(callback) {
+        const csvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQBa9R-ZR9MMnZZMxb6zQiS_KhNySPE7jB03QMgc98hmKHe2N4tEOq6FqVuL3LH183f7EY6n5m9aD65/pub?output=csv';
+
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: csvUrl,
+            onload: function(response) {
+                if (response.status === 200) {
+                    const csvData = response.responseText;
+                    console.log("CSV Data received:", csvData.substring(0, 200) + "...");
+                    callback(csvData);
+                } else {
+                    console.error("Failed to load CSV:", response.status, response.statusText);
+                    callback(null);
+                }
+            },
+            onerror: function(error) {
+                console.error("Error loading CSV:", error);
+                callback(null);
+            }
+        });
+    }
+
+    function checkPitPermission(employeeId, columnName, statusElement, csvData) {
+        const lines = csvData.split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        console.log("CSV Headers:", headers);
+
+        const employeeIdIndex = headers.findIndex(h => h.toLowerCase() === 'employee id');
+        const columnIndex = headers.findIndex(h => h.toLowerCase() === columnName.toLowerCase());
+
+        console.log(`Indices - Employee ID: ${employeeIdIndex}, ${columnName}: ${columnIndex}`);
+
+        if (employeeIdIndex === -1) {
+            console.error("Employee ID column not found");
+            statusElement.textContent = "Error: No Employee ID column";
+            statusElement.style.color = 'red';
+            return;
+        }
+
+        if (columnIndex === -1) {
+            console.error(`Column '${columnName}' not found`);
+            statusElement.textContent = `Error: No '${columnName}' column`;
+            statusElement.style.color = 'red';
+            return;
+        }
+
+        for (let i = 1; i < lines.length; i++) {
+            const columns = lines[i].split(',').map(c => c.trim());
+            if (columns[employeeIdIndex] === employeeId) {
+                const status = columns[columnIndex].toUpperCase();
+                console.log(`Found employee ${employeeId}, ${columnName} status: ${status}`);
+                statusElement.textContent = status || "N/A";
+                statusElement.style.color = status === "YES" ? 'green' : (status === "NO" ? 'red' : 'gray');
+                return;
+            }
+        }
+
+        console.log(`Employee ${employeeId} not found in CSV`);
+        statusElement.textContent = "N/A";
+        statusElement.style.color = 'gray';
+    }
+
+    fetchPermissions();
+
+    let urlUmbrella = `https://guided-coaching-dub.corp.amazon.com/api/employee-location-svc/GetLastSeenLocationOfEmployee?employeeId=${EmployeeID}`;
+
+    GM_xmlhttpRequest({
+        method: "GET",
+        url: urlUmbrella,
+        responseType: 'json',
+        onload: function(response) {
+            const json = response.response;
+            const station = json.location.id.id;
+            const expiration = json.location.currentEmployees[0].expirationTimestamp;
+
+            function epochToReadableLocalTime(epochTimestamp) {
+                const date = new Date(epochTimestamp);
+                const options = { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+                return date.toLocaleString(undefined, options);
+            }
+
+            const now = Date.now();
+            const localTime = expiration > now ? "NOW" : epochToReadableLocalTime(expiration);
+            const employeeInfoDiv = document.querySelector('.employeeInfo');
+
+            if (employeeInfoDiv) {
+                const firstListSideBySideDl = employeeInfoDiv.querySelector('.list-side-by-side');
+
+                if (firstListSideBySideDl) {
+                    const dtElement1 = document.createElement('dt');
+                    dtElement1.textContent = "Station";
+                    const ddElement1 = document.createElement('dd');
+                    ddElement1.textContent = station;
+                    const dtElement2 = document.createElement('dt');
+                    dtElement2.textContent = "Last Seen";
+                    const ddElement2 = document.createElement('dd');
+                    ddElement2.textContent = localTime;
+
+                    firstListSideBySideDl.appendChild(dtElement1);
+                    firstListSideBySideDl.appendChild(ddElement1);
+                    firstListSideBySideDl.appendChild(dtElement2);
+                    firstListSideBySideDl.appendChild(ddElement2);
+                }
+            }
+        }
+    });
+})();
